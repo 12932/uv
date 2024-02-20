@@ -37,6 +37,7 @@ pub async fn unzip<R: tokio::io::AsyncRead + Unpin>(
                 }
             }
 
+            // We don't know the file permissions here, because we haven't seen the central directory yet.
             let file = fs_err::tokio::File::create(path).await?;
             let mut writer =
                 if let Ok(size) = usize::try_from(entry.reader().entry().uncompressed_size()) {
@@ -70,15 +71,24 @@ pub async fn unzip<R: tokio::io::AsyncRead + Unpin>(
                 continue;
             }
 
-            // Construct the (expected) path to the file on-disk.
-            let path = entry.filename().as_str()?;
-            let path = target.as_ref().join(path);
+            let Some(mode) = entry.unix_permissions() else {
+                continue;
+            };
 
-            if let Some(mode) = entry.unix_permissions() {
-                // Create a file with read and write permissions.
-                // Otherwise, databricks-0.2.dist-info/RECORD in databricks-0.2-py2.py3-none-any.whl has 000 permissions.
-                let permissions = Permissions::from_mode(mode | 0o660);
-                fs_err::set_permissions(&path, permissions)?;
+            // The executable bit is the only permission we preserve, otherwise we use the OS defaults.
+            // https://github.com/pypa/pip/blob/3898741e29b7279e7bffe044ecfbe20f6a438b1e/src/pip/_internal/utils/unpacking.py#L88-L100
+            let has_any_executable_bit = mode & 0o111;
+            if has_any_executable_bit != 0 {
+                // Construct the (expected) path to the file on-disk.
+                let path = entry.filename().as_str()?;
+                let path = target.as_ref().join(path);
+
+                let permissions = fs_err::tokio::metadata(&path).await?.permissions();
+                fs_err::tokio::set_permissions(
+                    &path,
+                    Permissions::from_mode(permissions.mode() | 0o111),
+                )
+                .await?;
             }
         }
     }

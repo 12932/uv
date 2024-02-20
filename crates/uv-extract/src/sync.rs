@@ -1,4 +1,5 @@
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions, Permissions};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -45,25 +46,23 @@ pub fn unzip<R: Send + std::io::Read + std::io::Seek + HasLength>(
                 }
             }
 
-            // Create the file, with the correct permissions (on Unix).
-            let mut options = OpenOptions::new();
-            options.write(true);
-            options.create_new(true);
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-
-                if let Some(mode) = file.unix_mode() {
-                    options.mode(mode);
-                }
-                // Create a file with read and write permissions.
-                options.read(true).write(true);
-            }
-
             // Copy the file contents.
-            let mut outfile = options.open(&path)?;
+            let mut outfile = fs_err::File::create(&path)?;
             std::io::copy(&mut file, &mut outfile)?;
+
+            // See `uv_extract::stream::unzip`. For simplicity, this is identical with the code there except for being
+            // sync.
+            if let Some(mode) = file.unix_mode() {
+                // https://github.com/pypa/pip/blob/3898741e29b7279e7bffe044ecfbe20f6a438b1e/src/pip/_internal/utils/unpacking.py#L88-L100
+                let has_any_executable_bit = mode & 0o111;
+                if has_any_executable_bit != 0 {
+                    let permissions = fs_err::metadata(&path)?.permissions();
+                    fs_err::set_permissions(
+                        &path,
+                        Permissions::from_mode(permissions.mode() | 0o111),
+                    )?;
+                }
+            }
 
             Ok(())
         })

@@ -1,5 +1,5 @@
-use std::fs::{OpenOptions, Permissions};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 

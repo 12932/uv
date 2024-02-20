@@ -57,6 +57,8 @@ pub fn unzip<R: Send + std::io::Read + std::io::Seek + HasLength>(
                 if let Some(mode) = file.unix_mode() {
                     options.mode(mode);
                 }
+                // Create a file with read and write permissions.
+                options.read(true).write(true);
             }
 
             // Copy the file contents.

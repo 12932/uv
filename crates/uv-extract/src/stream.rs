@@ -75,7 +75,10 @@ pub async fn unzip<R: tokio::io::AsyncRead + Unpin>(
             let path = target.as_ref().join(path);
 
             if let Some(mode) = entry.unix_permissions() {
-                fs_err::set_permissions(&path, Permissions::from_mode(mode))?;
+                // Create a file with read and write permissions.
+                // Otherwise, databricks-0.2.dist-info/RECORD in databricks-0.2-py2.py3-none-any.whl has 000 permissions.
+                let permissions = Permissions::from_mode(mode | 0o660);
+                fs_err::set_permissions(&path, permissions)?;
             }
         }
     }
